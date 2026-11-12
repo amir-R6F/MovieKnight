@@ -1,0 +1,8 @@
+# Test-only dependencies. Install after the app's own requirements:
+#   pip install -r lanwatch/requirements.txt -r requirements-dev.txt
+-r lanwatch/requirements.txt
+
+pytest>=8.0
+pytest-asyncio>=0.24
+pytest-timeout>=2.3
+pytest-cov>=5.0
