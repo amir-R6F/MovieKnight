@@ -4,6 +4,10 @@ REM  LANWatch setup
 REM  Creates .venv and installs the app + dev dependencies with
 REM  network-resilient pip options and mirror fallback.
 REM  Safe to run many times. Windows 10/11, no admin rights needed.
+REM
+REM  Usage:  setup.bat          normal: banner, progress, pause
+REM          setup.bat /quiet   used by run.bat: warnings/errors
+REM                             only, no pause, same exit codes
 REM ============================================================
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
@@ -14,13 +18,21 @@ set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
 set "REQ_APP=lanwatch\requirements.txt"
 set "REQ_DEV=requirements-dev.txt"
 
-echo ============================================================
-echo  LANWatch - setup
-echo ============================================================
-echo  Everything is installed into a local "%VENV_DIR%" folder.
-echo  No admin rights, no PATH changes, safe to run again.
-echo ============================================================
-echo.
+REM Optional first argument "/quiet" (case-insensitive): silence the banner and
+REM the success chatter and skip the final pause. run.bat uses it for automatic
+REM installs and repairs. Warnings and errors are printed in both modes.
+set "QUIET="
+if /i "%~1"=="/quiet" set "QUIET=1"
+set "SAY=echo"
+if defined QUIET set "SAY=rem"
+
+%SAY% ============================================================
+%SAY%  LANWatch - setup
+%SAY% ============================================================
+%SAY%  Everything is installed into a local "%VENV_DIR%" folder.
+%SAY%  No admin rights, no PATH changes, safe to run again.
+%SAY% ============================================================
+%SAY%.
 
 REM ---------- 1) Python must exist and be 3.11 or newer ----------
 python --version >nul 2>&1
@@ -30,31 +42,31 @@ python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
 if errorlevel 1 goto :old_python
 
 for /f "delims=" %%V in ('python --version 2^>^&1') do set "PY_VERSION=%%V"
-echo [OK] !PY_VERSION! found.
+%SAY% [OK] !PY_VERSION! found.
 
 REM ---------- 2) Virtual environment ----------
 if exist "%VENV_PY%" goto :venv_ready
 
-echo [setup] Creating the virtual environment in "%VENV_DIR%" ...
+%SAY% [setup] Creating the virtual environment in "%VENV_DIR%" ...
 python -m venv "%VENV_DIR%"
 if errorlevel 1 goto :venv_failed
 
 :venv_ready
 if not exist "%VENV_DIR%\Scripts\activate.bat" goto :venv_broken
 call "%VENV_DIR%\Scripts\activate.bat"
-echo [OK] Virtual environment ready: "%VENV_DIR%"
-echo.
+%SAY% [OK] Virtual environment ready: "%VENV_DIR%"
+%SAY%.
 
 REM ---------- 3) pip ----------
-echo [setup] Upgrading pip ...
+%SAY% [setup] Upgrading pip ...
 "%VENV_PY%" -m pip install --upgrade pip --default-timeout=120 --retries 5 --trusted-host pypi.org --trusted-host files.pythonhosted.org
 if errorlevel 1 (
     echo [WARN] Could not upgrade pip. Continuing with the pip inside "%VENV_DIR%".
 )
-echo.
+%SAY%.
 
 REM ---------- 4) Dependencies: pypi.org first, then mirrors ----------
-echo [setup] Installing dependencies from pypi.org ...
+%SAY% [setup] Installing dependencies from pypi.org ...
 "%VENV_PY%" -m pip install --default-timeout=120 --retries 5 --trusted-host pypi.org --trusted-host files.pythonhosted.org -r "%REQ_APP%" -r "%REQ_DEV%"
 if not errorlevel 1 goto :deps_ok
 
@@ -73,11 +85,11 @@ if not errorlevel 1 goto :deps_ok
 goto :deps_failed
 
 :deps_ok
-echo [OK] Dependencies installed.
-echo.
+%SAY% [OK] Dependencies installed.
+%SAY%.
 
 REM ---------- 5) Verify the imports the app needs ----------
-echo [setup] Verifying the installation ...
+%SAY% [setup] Verifying the installation ...
 set "MISSING="
 for %%M in (websockets zeroconf customtkinter) do (
     "%VENV_PY%" -c "import %%M" >nul 2>&1
@@ -85,7 +97,7 @@ for %%M in (websockets zeroconf customtkinter) do (
         echo [ERROR] Python module "%%M" could not be imported.
         set "MISSING=1"
     ) else (
-        echo [OK] %%M imports correctly.
+        %SAY% [OK] %%M imports correctly.
     )
 )
 
@@ -100,15 +112,15 @@ set "MISSING=1"
 goto :mpv_done
 
 :mpv_ok
-echo [OK] python-mpv-jsonipc imports correctly.
+%SAY% [OK] python-mpv-jsonipc imports correctly.
 
 :mpv_done
 if defined MISSING goto :verify_failed
 
-echo.
-echo Setup complete. Double-click run.bat to start LANWatch.
-echo.
-pause
+%SAY%.
+%SAY% Setup complete. Double-click run.bat to start LANWatch.
+%SAY%.
+if not defined QUIET pause
 exit /b 0
 
 REM ============================================================
@@ -117,10 +129,10 @@ REM ============================================================
 
 :try_mirror
 REM %1 = index URL, %2 = mirror host name
-echo [mirror] Trying %~2 ...
+%SAY% [mirror] Trying %~2 ...
 "%VENV_PY%" -m pip install --default-timeout=120 --retries 5 --trusted-host pypi.org --trusted-host files.pythonhosted.org -i "%~1" --trusted-host "%~2" -r "%REQ_APP%" -r "%REQ_DEV%"
 if not errorlevel 1 (
-    echo [OK] Installed from %~2.
+    %SAY% [OK] Installed from %~2.
     exit /b 0
 )
 echo [WARN] Mirror %~2 did not work; trying the next option.
@@ -180,5 +192,5 @@ goto :failed
 echo.
 echo Setup did not finish. Fix the problem above and run setup.bat again.
 echo.
-pause
+if not defined QUIET pause
 exit /b 1
