@@ -35,20 +35,34 @@ if defined QUIET set "SAY=rem"
 %SAY%.
 
 REM ---------- 1) Python must exist and be 3.11 or newer ----------
-python --version >nul 2>&1
+REM Prefer the "py" launcher as "py -3"; fall back to a bare "python".
+REM The interpreter name lives in PY and its arguments in PY_ARGS so that every
+REM call below can be quoted ("%PY%") and still run: a value like "py -3" must
+REM not be put inside the quotes, cmd would look for a file named "py -3".
+set "PY=python"
+set "PY_ARGS="
+where py >nul 2>&1
+if errorlevel 1 goto :python_ready
+py -3 --version >nul 2>&1
+if errorlevel 1 goto :python_ready
+set "PY=py"
+set "PY_ARGS=-3"
+
+:python_ready
+"%PY%" %PY_ARGS% --version >nul 2>&1
 if errorlevel 1 goto :no_python
 
-python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>&1
+"%PY%" %PY_ARGS% -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>&1
 if errorlevel 1 goto :old_python
 
-for /f "delims=" %%V in ('python --version 2^>^&1') do set "PY_VERSION=%%V"
-%SAY% [OK] !PY_VERSION! found.
+%SAY% [OK] Python is available:
+if not defined QUIET "%PY%" %PY_ARGS% --version
 
 REM ---------- 2) Virtual environment ----------
 if exist "%VENV_PY%" goto :venv_ready
 
 %SAY% [setup] Creating the virtual environment in "%VENV_DIR%" ...
-python -m venv "%VENV_DIR%"
+"%PY%" %PY_ARGS% -m venv "%VENV_DIR%"
 if errorlevel 1 goto :venv_failed
 
 :venv_ready
@@ -140,7 +154,8 @@ exit /b 1
 
 :no_python
 echo.
-echo [ERROR] Python was not found. LANWatch needs Python 3.11 or newer.
+echo [ERROR] Python 3.11 or newer was not found.
+echo         Tried "py -3" and "python".
 echo         Download it from: %PYTHON_URL%
 echo         During installation tick "Add python.exe to PATH".
 echo         If "py -3 --version" works but "python" does not, reinstall
@@ -150,7 +165,7 @@ goto :failed
 :old_python
 echo.
 echo [ERROR] Your Python is older than 3.11.
-python --version
+"%PY%" %PY_ARGS% --version
 echo         Install Python 3.11 or newer from: %PYTHON_URL%
 echo         Then run setup.bat again.
 goto :failed

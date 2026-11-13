@@ -4,11 +4,8 @@ REM broken one is repaired through setup.bat /quiet (no pause inside setup).
 setlocal
 cd /d "%~dp0"
 
-where py >nul 2>&1
-if %errorlevel%==0 (set "PY=py -3") else (set "PY=python")
-
 if not exist ".venv\Scripts\python.exe" (
-    echo [LANWatch] First run: setting up dependencies (this may take a minute)...
+    echo [LANWatch] First run: setting up dependencies - this may take a minute...
     call setup.bat /quiet
     if errorlevel 1 goto :setup_failed
 )
@@ -20,6 +17,12 @@ if errorlevel 1 (
     if errorlevel 1 goto :setup_failed
     ".venv\Scripts\python.exe" -c "import websockets, zeroconf, customtkinter, python_mpv_jsonipc" >nul 2>&1
     if errorlevel 1 goto :setup_failed
+)
+
+if not exist "lanwatch\main.py" (
+    echo [LANWatch] lanwatch\main.py not found. Is the repo complete?
+    pause
+    exit /b 1
 )
 
 echo [LANWatch] Starting...
