@@ -15,6 +15,118 @@ LANWatch چند کامپیوتر ویندوزی را طوری هم‌زمان م
 
 ---
 
+## نصب (Installation)
+
+پیش‌نیازهای نرم‌افزاری (پایتون ۳.۱۱+ و mpv) در بخش بعد توضیح داده شده‌اند؛ اسکریپت نصب خودش
+وجود و نسخه‌ی پایتون را بررسی می‌کند.
+
+### روش پیشنهادی: `setup.bat`
+
+روی **`setup.bat`** در ریشه‌ی پروژه دوبار کلیک کنید. اسکریپت به‌ترتیب:
+
+1. بررسی می‌کند `python --version` کار می‌کند و نسخه **۳.۱۱ یا بالاتر** است؛
+   اگر نبود، لینک دانلود python.org را نشان می‌دهد و با کد خطای ۱ خارج می‌شود.
+2. اگر `.venv` نباشد می‌سازد و آن را فعال می‌کند (`call .venv\Scripts\activate.bat`).
+3. `pip` را به‌روز می‌کند.
+4. بسته‌ها را با پرچم‌های مقاوم در برابر شبکه‌ی کند نصب می‌کند:
+
+   ```bat
+   --default-timeout=120 --retries 5 --trusted-host pypi.org --trusted-host files.pythonhosted.org
+   ```
+
+5. اگر `pypi.org` جواب نداد، به‌ترتیب از آینه‌های زیر امتحان می‌کند و در اولین موفقیت می‌ایستد:
+   Tsinghua → `https://pypi.tuna.tsinghua.edu.cn/simple`،
+   Runflare → `https://mirror.runflare.com/pypi/simple`،
+   Aliyun → `https://mirrors.aliyun.com/pypi/simple`.
+   اگر یکی از آینه‌ها در دسترس نبود فقط یک هشدار چاپ می‌شود و آینه‌ی بعدی امتحان می‌شود
+   (اسکریپت به‌خاطر شکست یک آینه متوقف نمی‌شود).
+6. در پایان بررسی می‌کند `websockets`، `zeroconf`، `customtkinter` و `mpv` واقعاً `import`
+   می‌شوند (بسته‌ی `python-mpv-jsonipc` با نام `mpv` ایمپورت می‌شود) و اگر یکی نشد،
+   نام همان ماژول را چاپ می‌کند و با کد خطای ۱ خارج می‌شود.
+
+در پایان پیام `Setup complete. Double-click run.bat to start LANWatch.` را می‌بینید؛ حالا
+`run.bat` را اجرا کنید.
+
+`setup.bat` **idempotent** است: هر چند بار که خواستید اجرا کنید مشکلی پیش نمی‌آید. اگر `.venv`
+از قبل باشد دوباره ساخته نمی‌شود و نصب فقط بسته‌های موجود را بررسی/تکمیل می‌کند. هیچ چیزی
+به‌صورت global نصب نمی‌شود، به دسترسی Administrator نیاز نیست، `PATH` و متغیرهای سیستمی هم
+تغییر نمی‌کنند و اسکریپت هیچ تماس شبکه‌ای جز خود `pip` ندارد.
+
+اگر PowerShell را ترجیح می‌دهید (یا آنتی‌ویروس اجرای `.bat` را مسدود کرده)، معادل آن را اجرا کنید:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+```
+
+`setup.ps1` دقیقاً همان منطق را دارد: همان بررسی پایتون، همان پرچم‌ها، همان سه آینه و همان
+بررسی ایمپورت‌ها.
+
+### روش دستی
+
+اگر نمی‌خواهید از اسکریپت استفاده کنید، از `cmd` در ریشه‌ی پروژه:
+
+```bat
+py -3 -m venv .venv
+call .venv\Scripts\activate.bat
+python -m pip install --upgrade pip --default-timeout=120 --retries 5
+python -m pip install --default-timeout=120 --retries 5 ^
+    --trusted-host pypi.org --trusted-host files.pythonhosted.org ^
+    -r lanwatch\requirements.txt
+python lanwatch\main.py
+```
+
+برای نصب بسته‌های تست هم کافی است:
+
+```bat
+python -m pip install --default-timeout=120 --retries 5 -r requirements-dev.txt
+```
+
+`requirements-dev.txt` خودش شامل خط `-r lanwatch/requirements.txt` است، پس بسته‌های برنامه را
+هم نصب می‌کند.
+
+### رفع اشکال نصب
+
+| خطا | علت | راه‌حل |
+|---|---|---|
+| `ReadTimeoutError` / `The read operation timed out` | اینترنت کند یا ناپایدار؛ دانلود بسته‌ای مثل `zeroconf` یا `coverage` نیمه‌کاره می‌ماند. | `setup.bat` را اجرا کنید (خودش `--default-timeout=120 --retries 5` دارد) یا همان پرچم‌ها را دستی اضافه کنید. اگر باز هم نشد، آینه را دستی بدهید: `-i https://mirror.runflare.com/pypi/simple --trusted-host mirror.runflare.com` |
+| `SSL: CERTIFICATE_VERIFY_FAILED` / `SSL error` | پروکسی یا فایروال سازمانی گواهی را عوض می‌کند، یا ساعت ویندوز غلط است. | ساعت ویندوز را درست کنید (`Settings → Time & language`)، VPN/پروکسی را موقتاً خاموش کنید و `--trusted-host pypi.org --trusted-host files.pythonhosted.org` را اضافه کنید. |
+| `Could not find a version that satisfies the requirement` / `No matching distribution found` | نسخه‌ی پایتون قدیمی است، نام بسته غلط است، یا آن آینه بسته را ندارد. | `python --version` باید ۳.۱۱+ باشد. نام درست بسته `python-mpv-jsonipc` است (نه `mpv`). آینه‌ی دیگر یا `pypi.org` بدون `-i` را امتحان کنید. |
+| `WinError 10013` / `ConnectionResetError` | فایروال یا آنتی‌ویروس اتصال pip را قطع می‌کند. | pip و پوشه‌ی پروژه را در فایروال/آنتی‌ویروس مجاز کنید، یا از شبکه/هات‌اسپات دیگری استفاده کنید. |
+| `'python' is not recognized as an internal or external command` | پایتون در `PATH` نیست. | پایتون را با تیک «Add python.exe to PATH» دوباره نصب کنید، یا به‌جای `python` از `py -3` استفاده کنید. |
+
+### If pip keeps timing out — تنظیم دائمی pip
+
+اگر نصب هر بار با `ReadTimeoutError` شکست می‌خورد، می‌توانید این تحمل را برای همیشه در خود pip
+ذخیره کنید (یک بار انجام می‌دهید و روی همه‌ی نصب‌های بعدی اثر دارد):
+
+1. فایل `%APPDATA%\pip\pip.ini` را بسازید (اگر پوشه‌ی `pip` نیست، اول بسازید).
+2. این محتوا را داخلش بگذارید:
+
+```ini
+[global]
+default-timeout = 120
+retries = 5
+trusted-host = pypi.org
+trusted-host = files.pythonhosted.org
+```
+
+3. دوباره نصب را اجرا کنید.
+
+ساختن فایل از `cmd`:
+
+```bat
+mkdir "%APPDATA%\pip" 2>nul
+notepad "%APPDATA%\pip\pip.ini"
+```
+
+توضیح: این فایل باعث می‌شود pip به‌طور **دائمی** با اینترنت کند یا ناپایدار کنار بیاید — برای هر
+پاسخ بیشتر صبر می‌کند (۱۲۰ ثانیه) و در صورت خطا خودکار تلاش مجدد می‌کند (۵ بار)، بدون این‌که لازم
+باشد هر بار پرچم‌ها را در دستور تایپ کنید. این تنظیم فقط برای کاربر جاری است، به Administrator
+نیاز ندارد و `PATH` یا متغیرهای سیستمی را تغییر نمی‌دهد. برای برداشتن اثرش کافی است همان فایل
+`pip.ini` را پاک کنید.
+
+---
+
 ## ۱) پیش‌نیازها (روی هر کامپیوتر)
 
 1. **ویندوز ۱۰ یا ۱۱** (بدون نیاز به دسترسی Administrator)
@@ -72,11 +184,12 @@ winget install mpv
    (`websockets`، `python-mpv-jsonipc`، `customtkinter`، `zeroconf`),
 3. برنامه را اجرا می‌کند.
 
-اجرای دستی (اگر ترجیح می‌دهید از `cmd` استفاده کنید، از ریشه‌ی پوشه‌ی پروژه):
+اجرای دستی (اگر ترجیح می‌دهید از `cmd` استفاده کنید، از ریشه‌ی پوشه‌ی پروژه). اگر نصب با
+خطای شبکه شکست خورد، اول `setup.bat` را اجرا کنید (بخش «نصب» در بالای همین فایل):
 
 ```bat
 py -3 -m venv .venv
-.venv\Scripts\python.exe -m pip install -r lanwatch\requirements.txt
+.venv\Scripts\python.exe -m pip install --default-timeout=120 --retries 5 -r lanwatch\requirements.txt
 .venv\Scripts\python.exe lanwatch\main.py
 ```
 
@@ -236,6 +349,8 @@ Tailscale رایگان است و کار کردن با آن برای این بر�
 
 ```
 LANWatch/
+├── setup.bat            # نصب خودکار و مقاوم در برابر شبکه‌ی کند (ویندوز، پیشنهادی)
+├── setup.ps1            # معادل PowerShell همان نصب
 ├── run.bat              # ساخت محیط مجازی و اجرای برنامه (ویندوز)
 ├── README.md
 ├── tests/

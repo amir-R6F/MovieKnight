@@ -1,0 +1,184 @@
+@echo off
+REM ============================================================
+REM  LANWatch setup
+REM  Creates .venv and installs the app + dev dependencies with
+REM  network-resilient pip options and mirror fallback.
+REM  Safe to run many times. Windows 10/11, no admin rights needed.
+REM ============================================================
+setlocal enabledelayedexpansion
+cd /d "%~dp0"
+
+set "PYTHON_URL=https://www.python.org/downloads/windows/"
+set "VENV_DIR=.venv"
+set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
+set "REQ_APP=lanwatch\requirements.txt"
+set "REQ_DEV=requirements-dev.txt"
+
+echo ============================================================
+echo  LANWatch - setup
+echo ============================================================
+echo  Everything is installed into a local "%VENV_DIR%" folder.
+echo  No admin rights, no PATH changes, safe to run again.
+echo ============================================================
+echo.
+
+REM ---------- 1) Python must exist and be 3.11 or newer ----------
+python --version >nul 2>&1
+if errorlevel 1 goto :no_python
+
+python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>&1
+if errorlevel 1 goto :old_python
+
+for /f "delims=" %%V in ('python --version 2^>^&1') do set "PY_VERSION=%%V"
+echo [OK] !PY_VERSION! found.
+
+REM ---------- 2) Virtual environment ----------
+if exist "%VENV_PY%" goto :venv_ready
+
+echo [setup] Creating the virtual environment in "%VENV_DIR%" ...
+python -m venv "%VENV_DIR%"
+if errorlevel 1 goto :venv_failed
+
+:venv_ready
+if not exist "%VENV_DIR%\Scripts\activate.bat" goto :venv_broken
+call "%VENV_DIR%\Scripts\activate.bat"
+echo [OK] Virtual environment ready: "%VENV_DIR%"
+echo.
+
+REM ---------- 3) pip ----------
+echo [setup] Upgrading pip ...
+"%VENV_PY%" -m pip install --upgrade pip --default-timeout=120 --retries 5 --trusted-host pypi.org --trusted-host files.pythonhosted.org
+if errorlevel 1 (
+    echo [WARN] Could not upgrade pip. Continuing with the pip inside "%VENV_DIR%".
+)
+echo.
+
+REM ---------- 4) Dependencies: pypi.org first, then mirrors ----------
+echo [setup] Installing dependencies from pypi.org ...
+"%VENV_PY%" -m pip install --default-timeout=120 --retries 5 --trusted-host pypi.org --trusted-host files.pythonhosted.org -r "%REQ_APP%" -r "%REQ_DEV%"
+if not errorlevel 1 goto :deps_ok
+
+echo.
+echo [WARN] Installing from pypi.org failed (see the pip messages above).
+echo [WARN] Trying fallback mirrors. This can take a while on a slow network.
+echo.
+
+call :try_mirror "https://pypi.tuna.tsinghua.edu.cn/simple" "pypi.tuna.tsinghua.edu.cn"
+if not errorlevel 1 goto :deps_ok
+call :try_mirror "https://mirror.runflare.com/pypi/simple" "mirror.runflare.com"
+if not errorlevel 1 goto :deps_ok
+call :try_mirror "https://mirrors.aliyun.com/pypi/simple" "mirrors.aliyun.com"
+if not errorlevel 1 goto :deps_ok
+
+goto :deps_failed
+
+:deps_ok
+echo [OK] Dependencies installed.
+echo.
+
+REM ---------- 5) Verify the imports the app needs ----------
+echo [setup] Verifying the installation ...
+set "MISSING="
+for %%M in (websockets zeroconf customtkinter) do (
+    "%VENV_PY%" -c "import %%M" >nul 2>&1
+    if errorlevel 1 (
+        echo [ERROR] Python module "%%M" could not be imported.
+        set "MISSING=1"
+    ) else (
+        echo [OK] %%M imports correctly.
+    )
+)
+
+REM python-mpv-jsonipc installs the module "python_mpv_jsonipc" (that is the
+REM name player.py imports). Some builds also expose "mpv", so accept either.
+"%VENV_PY%" -c "import python_mpv_jsonipc" >nul 2>&1
+if not errorlevel 1 goto :mpv_ok
+"%VENV_PY%" -c "import mpv" >nul 2>&1
+if not errorlevel 1 goto :mpv_ok
+echo [ERROR] The mpv binding could not be imported (tried "python_mpv_jsonipc" and "mpv").
+set "MISSING=1"
+goto :mpv_done
+
+:mpv_ok
+echo [OK] python-mpv-jsonipc imports correctly.
+
+:mpv_done
+if defined MISSING goto :verify_failed
+
+echo.
+echo Setup complete. Double-click run.bat to start LANWatch.
+echo.
+pause
+exit /b 0
+
+REM ============================================================
+REM  Subroutines and error paths (never reached by fall-through)
+REM ============================================================
+
+:try_mirror
+REM %1 = index URL, %2 = mirror host name
+echo [mirror] Trying %~2 ...
+"%VENV_PY%" -m pip install --default-timeout=120 --retries 5 --trusted-host pypi.org --trusted-host files.pythonhosted.org -i "%~1" --trusted-host "%~2" -r "%REQ_APP%" -r "%REQ_DEV%"
+if not errorlevel 1 (
+    echo [OK] Installed from %~2.
+    exit /b 0
+)
+echo [WARN] Mirror %~2 did not work; trying the next option.
+exit /b 1
+
+:no_python
+echo.
+echo [ERROR] Python was not found. LANWatch needs Python 3.11 or newer.
+echo         Download it from: %PYTHON_URL%
+echo         During installation tick "Add python.exe to PATH".
+echo         If "py -3 --version" works but "python" does not, reinstall
+echo         Python with the PATH option enabled.
+goto :failed
+
+:old_python
+echo.
+echo [ERROR] Your Python is older than 3.11.
+python --version
+echo         Install Python 3.11 or newer from: %PYTHON_URL%
+echo         Then run setup.bat again.
+goto :failed
+
+:venv_failed
+echo.
+echo [ERROR] Could not create the virtual environment in "%VENV_DIR%".
+echo         Check that you can write in this folder and that Python is
+echo         installed correctly, then run setup.bat again.
+goto :failed
+
+:venv_broken
+echo.
+echo [ERROR] The folder "%VENV_DIR%" exists but its activation script is missing.
+echo         Delete that folder and run setup.bat again.
+goto :failed
+
+:deps_failed
+echo.
+echo [ERROR] Installing dependencies failed on pypi.org and on every mirror.
+echo         What to try next:
+echo           - Check your internet connection and disable VPN for a moment.
+echo           - Run setup.bat again; it is safe to repeat and resumes progress.
+echo           - If pip keeps timing out, create %%APPDATA%%\pip\pip.ini as
+echo             described in README.md ("If pip keeps timing out").
+echo           - Last resort, install by hand to see the full pip error:
+echo             ".venv\Scripts\python.exe" -m pip install -r lanwatch\requirements.txt
+goto :failed
+
+:verify_failed
+echo.
+echo [ERROR] Some modules are missing after installation.
+echo         Run setup.bat again (safe to repeat). If the same module keeps
+echo         failing, install the packages by hand to see the full error:
+echo           ".venv\Scripts\python.exe" -m pip install websockets zeroconf customtkinter python-mpv-jsonipc
+goto :failed
+
+:failed
+echo.
+echo Setup did not finish. Fix the problem above and run setup.bat again.
+echo.
+pause
+exit /b 1
